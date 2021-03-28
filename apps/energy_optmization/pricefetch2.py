@@ -19,7 +19,7 @@ class PriceFetch2(hass.Hass):
         self.run_daily(self.getprices, "13:32:01") #New prices are published to Nordpool around 13:30 EET
         self.run_daily(self.getprices, "01:00:01") #Update tommorrow to today after nordpool changes to next day
         hourly_start=datetime.datetime.today().hour+1
-        self.run_hourly(self.updatecurrentprice, datetime.time(hourly_start, 0, 1)) #Update prices every even hour
+        self.run_hourly(self.updatecurrentprice, datetime.time(hourly_start, 0, 1)) #Update prices every hour
         prices_spot = elspot.Prices()
         datatoday = prices_spot.hourly(end_date=self.date(),areas=[self.area])
         now = datetime.datetime.now(pytz.utc)
@@ -28,9 +28,10 @@ class PriceFetch2(hass.Hass):
                 self.set_state("sensor.spot_cost", state=round(rate['value']/10*self.vat+self.extracost,3)) #Added VAT, transfer and electricity tax
                 self.set_state("sensor.spot_sell", state=round(rate['value']/10,3)) #Raw price for selling
         self.log(datatoday['areas'][self.area]['Average'])
+        if ((now.timestamp() - self.convert_utc(self.entities.sensor.spot_cost.last_changed).timestamp())>10):
+            self.run_in(self.updatecurrentprice, 200)
         datatomorrow = prices_spot.hourly(areas=[self.area])
-        priceslist = []
-        
+        priceslist = []        
         for i in datatoday['areas'][self.area]['values']:
             priceslist.append(round(i['value']/10*self.vat+self.extracost,3))
         priceslistime= []
@@ -48,7 +49,6 @@ class PriceFetch2(hass.Hass):
             
     def getprices(self,kwargs): # Get daily prices
         prices_spot = elspot.Prices()
-        now = datetime.datetime.now(pytz.utc)
         datatoday = prices_spot.hourly(end_date=self.date(),areas=[self.area])
         priceslist = []
         for i in datatoday['areas'][self.area]['values']:
@@ -78,3 +78,5 @@ class PriceFetch2(hass.Hass):
             if rate['start'] <= now < rate['end']:
                 self.set_state("sensor.spot_cost", state=round(rate['value']/10*self.vat+self.extracost,3))
                 self.set_state("sensor.spot_sell", state=round(rate['value']/10,3))
+        if ((now.timestamp() - self.convert_utc(self.entities.sensor.spot_cost.last_changed).timestamp())>10):
+            self.run_in(self.updatecurrentprice, 200)

@@ -2,6 +2,8 @@ import appdaemon.plugins.hass.hassapi as hass
 
 class Deviceoptimization2(hass.Hass):
     def initialize(self):
+        self._initialize(self)
+    def _initialize(self, kwargs):   
         try:
             self.entity_id=self.args["entity_id"]
             self.domain=self.entity_id.split('.')[0]
@@ -9,18 +11,36 @@ class Deviceoptimization2(hass.Hass):
         except KeyError:
             self.log("Entity_id not defined")
         try:
-            self.hours=self.args["hours"]-1
-            
+            self.hours=self.args["hours"]-1         
         except KeyError:
             self.log("Amount of hours not defined")
         try:
+            self.selectvalueUnder=self.args["selectvalueUnder"]
+            self.selectvalueOver=self.args["selectvalueOver"]
+            self.selectvalueactive=True
+        except:
+            self.selectvalueactive=False
+        try:
             self.service_under=self.args["service_under"]
         except KeyError:
-            self.log("Service under not defined")
+            if self.selectvalueactive == False: 
+                self.log("Service under not defined")
         try:
             self.service_over=self.args["service_over"]
         except KeyError:
-            self.log("Service over not defined")       
+            if self.selectvalueactive == False: 
+                self.log("Service over not defined")
+        try:
+            self.timer=self.args["timer"]
+            self.timerduration=self.args["timerduration"]
+            self.timerActive=True
+        except KeyError:
+            self.timerActive=False
+        try:
+            self.conditon=self.args["condition"]
+            self.conditonActive=True
+        except KeyError:
+            self.conditonActive=False      
         if self.domain== "climate":
             try:
                 self.hoursBoost=self.args["hoursBoost"]-1
@@ -43,11 +63,11 @@ class Deviceoptimization2(hass.Hass):
             except KeyError:
                 self.log("Target temperature not defined, boost disabled")
                 self.boost=False
-
-        
-        
         future=self.get_state("sensor.spot_cost_today")
-        futurelist=future.replace('[','').replace(']','').split(", ")
+        try:
+            futurelist=future.replace('[','').replace(']','').split(", ")
+        except AttributeError:
+            self.run_in(self._initialize, 30)
         self.set_state(self.limitid, state=futurelist[self.hours])
         if self.domain== "climate": 
             if self.boost:
@@ -67,11 +87,37 @@ class Deviceoptimization2(hass.Hass):
                     self.call_service(self.service_under, entity_id = self.entity_id)
                 if float(new)>float(self.get_state(self.limitid)):
                     self.call_service(self.service_over, entity_id = self.entity_id)
+        elif self.conditonActive:
+            if (float(new)<=float(self.get_state(self.limitid)) and self.get_state(self.conditon) == "on"):
+                if self.selectvalueactive:
+                    self.select_option(self.entity_id, self.selectvalueUnder)
+                else:
+                    self.call_service(self.service_under, entity_id = self.entity_id)
+                if self.timerActive:
+                    if self.get_state(self.timer) == "paused":
+                        self.call_service("timer/start", entity_id=self.timer)
+                    elif self.get_state(self.timer) == "idle":
+                        self.call_service("timer/start", entity_id=self.timer, duration=self.get_state(self.timerduration))
+                else:
+                    self.call_service("input_boolean/turn_off", entity_id = self.conditon)
+            if float(new)>float(self.get_state(self.limitid)):
+                if self.selectvalueactive:
+                    self.select_option(self.entity_id, self.selectvalueOver)
+                else:
+                    self.call_service(self.service_over, entity_id = self.entity_id)
+                if self.timerActive:
+                    self.call_service("timer/pause", entity_id= self.timer)     
         else:
             if float(new)<=float(self.get_state(self.limitid)):
-                self.call_service(self.service_under, entity_id = self.entity_id)
+                if self.selectvalueactive:
+                    self.select_option(self.entity_id, self.selectvalueUnder)
+                else:
+                    self.call_service(self.service_under, entity_id = self.entity_id)
             if float(new)>float(self.get_state(self.limitid)):
-                self.call_service(self.service_over, entity_id = self.entity_id)
+                if self.selectvalueactive:
+                    self.select_option(self.entity_id, self.selectvalueOver)
+                else:
+                    self.call_service(self.service_over, entity_id = self.entity_id)
     
     def updatelimitnight(self, kwargs):
         future=self.get_state("sensor.spot_cost_future")
