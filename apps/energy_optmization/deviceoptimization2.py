@@ -1,4 +1,6 @@
 import appdaemon.plugins.hass.hassapi as hass
+from datetime import timedelta, datetime
+import time
 
 class Deviceoptimization2(hass.Hass):
     def initialize(self):
@@ -15,10 +17,23 @@ class Deviceoptimization2(hass.Hass):
         except KeyError:
             self.log("Amount of hours not defined")
         try:
+            self.dynamicentity=self.args["dynamicentity"] 
+            self.dynamicvalue=True
+        except KeyError:
+            self.dynamicvalue=False
+        try:   
+            self.limitruntime=self.args["limitruntime"]
+        except KeyError:
+            self.limitruntime="23:59:50"
+        try:
+            self.hourslimit=self.args["hourslimit"]
+        except KeyError:
+            self.hourslimit=24
+        try:
             self.selectvalueUnder=self.args["selectvalueUnder"]
             self.selectvalueOver=self.args["selectvalueOver"]
             self.selectvalueactive=True
-        except:
+        except KeyError:
             self.selectvalueactive=False
         try:
             self.service_under=self.args["service_under"]
@@ -39,8 +54,16 @@ class Deviceoptimization2(hass.Hass):
         try:
             self.conditon=self.args["condition"]
             self.conditonActive=True
+            self.conditionset=True
         except KeyError:
-            self.conditonActive=False      
+            self.conditonActive=False
+        try:
+            self.awayhours=self.args["awayhours"]-1
+            self.awayid=self.args["awayid"]      
+            self.awaystatus=self.args["awaystatus"]
+            self.away=True
+        except KeyError:
+            self.away=False
         if self.domain== "climate":
             try:
                 self.hoursBoost=self.args["hoursBoost"]-1
@@ -62,77 +85,106 @@ class Deviceoptimization2(hass.Hass):
                 self.temperature=self.args["temperature"]
             except KeyError:
                 self.log("Target temperature not defined, boost disabled")
-                self.boost=False
-        future=self.get_state("sensor.spot_cost_today")
-        try:
-            futurelist=future.replace('[','').replace(']','').split(", ")
-        except AttributeError:
-            self.run_in(self._initialize, 30)
-        self.set_state(self.limitid, state=futurelist[self.hours])
-        if self.domain== "climate": 
-            if self.boost:
-                self.set_state(self.limitidb, state=futurelist[self.hoursBoost])
-        self.listen_state(self.callservice, "sensor.spot_cost")
-        self.listen_state(self.updatelimitday, "sensor.spot_cost_today")
-        self.run_daily(self.updatelimitnight, "00:55:00")
+                self.boost=False 
+        if self.get_state("sensor.pricetime") == "on":
+            Pricesfound=True
+        else:    
+            Pricesfound=False
+            self.run_in(self._initialize, 10)
+        if Pricesfound:
+            self.listen_state(self.callservice, "sensor.spot_cost")
+            if self.dynamicvalue:
+                self.listen_state(self.updatelimitdynamic, self.dynamicentity)
+                self.run_daily(self.updatelimit, self.limitruntime) #Needed to force run dynamic entities on away mode
+                if self.get_state(self.dynamicentity)=="on":
+                    self.run_in(self.updatelimit, 5)
+            else:
+                self.run_in(self.updatelimit,5)      
+                self.run_daily(self.updatelimit, self.limitruntime)
     
     def callservice(self, entity, attribute, old, new, kwargs):
-        if self.domain == "climate":
-            if self.get_state(self.entity_id) != "fan_only":
-                if float(new)<=float(self.get_state(self.limitidb)) and self.boost:
-                    self.call_service(self.service_boost, entity_id = self.entity_id, temperature=float(self.get_state(self.temperature))+self.boost_amount) 
-                if float(new)>float(self.get_state(self.limitidb)) and self.boost:
-                    self.call_service(self.service_boost, entity_id = self.entity_id, temperature=float(self.get_state(self.temperature)))
+        if self.entity_exists(self.limitid):
+            if self.away:
+                if self.get_state(self.awayid) == self.awaystatus:
+                    self.conditonActive=False
+                elif self.conditionset:
+                    self.conditonActive=True
+            if self.domain == "climate":
+                if self.get_state(self.entity_id) != "fan_only":
+                    if self.boost and self.entity_exists(self.limitidb):
+                        if float(new)<=float(self.get_state(self.limitidb)):
+                            self.call_service(self.service_boost, entity_id = self.entity_id, temperature=float(self.get_state(self.temperature))+self.boost_amount) 
+                        else:
+                            self.call_service(self.service_boost, entity_id = self.entity_id, temperature=float(self.get_state(self.temperature)))
+                    if float(new)<=float(self.get_state(self.limitid)):
+                        self.call_service(self.service_under, entity_id = self.entity_id)
+                    else:
+                        self.call_service(self.service_over, entity_id = self.entity_id)
+            elif self.conditonActive:
+                if (float(new)<=float(self.get_state(self.limitid)) and self.get_state(self.conditon) == "on"):
+                    if self.selectvalueactive:
+                        self.select_option(self.entity_id, self.selectvalueUnder)
+                    else:
+                        self.call_service(self.service_under, entity_id = self.entity_id)
+                    if self.timerActive:
+                        if self.get_state(self.timer) == "paused":
+                            self.call_service("timer/start", entity_id=self.timer)
+                        elif self.get_state(self.timer) == "idle":
+                            self.call_service("timer/start", entity_id=self.timer, duration=self.get_state(self.timerduration))
+                    else:
+                        self.call_service("input_boolean/turn_off", entity_id = self.conditon)
+                else:
+                    if self.selectvalueactive:
+                        self.select_option(self.entity_id, self.selectvalueOver)
+                    else:
+                        self.call_service(self.service_over, entity_id = self.entity_id)
+                    if self.timerActive:
+                        self.call_service("timer/pause", entity_id= self.timer)     
+            else:
                 if float(new)<=float(self.get_state(self.limitid)):
-                    self.call_service(self.service_under, entity_id = self.entity_id)
-                if float(new)>float(self.get_state(self.limitid)):
-                    self.call_service(self.service_over, entity_id = self.entity_id)
-        elif self.conditonActive:
-            if (float(new)<=float(self.get_state(self.limitid)) and self.get_state(self.conditon) == "on"):
-                if self.selectvalueactive:
-                    self.select_option(self.entity_id, self.selectvalueUnder)
+                    if self.selectvalueactive:
+                        self.select_option(self.entity_id, self.selectvalueUnder)
+                    else:
+                        self.call_service(self.service_under, entity_id = self.entity_id)
                 else:
-                    self.call_service(self.service_under, entity_id = self.entity_id)
-                if self.timerActive:
-                    if self.get_state(self.timer) == "paused":
-                        self.call_service("timer/start", entity_id=self.timer)
-                    elif self.get_state(self.timer) == "idle":
-                        self.call_service("timer/start", entity_id=self.timer, duration=self.get_state(self.timerduration))
-                else:
-                    self.call_service("input_boolean/turn_off", entity_id = self.conditon)
-            if float(new)>float(self.get_state(self.limitid)):
-                if self.selectvalueactive:
-                    self.select_option(self.entity_id, self.selectvalueOver)
-                else:
-                    self.call_service(self.service_over, entity_id = self.entity_id)
-                if self.timerActive:
-                    self.call_service("timer/pause", entity_id= self.timer)     
-        else:
-            if float(new)<=float(self.get_state(self.limitid)):
-                if self.selectvalueactive:
-                    self.select_option(self.entity_id, self.selectvalueUnder)
-                else:
-                    self.call_service(self.service_under, entity_id = self.entity_id)
-            if float(new)>float(self.get_state(self.limitid)):
-                if self.selectvalueactive:
-                    self.select_option(self.entity_id, self.selectvalueOver)
-                else:
-                    self.call_service(self.service_over, entity_id = self.entity_id)
+                    if self.selectvalueactive:
+                        self.select_option(self.entity_id, self.selectvalueOver)
+                    else:
+                        self.call_service(self.service_over, entity_id = self.entity_id)
     
-    def updatelimitnight(self, kwargs):
-        future=self.get_state("sensor.spot_cost_future")
-        futurelist=future.replace('[','').replace(']','').split(", ")
-        self.set_state(self.limitid, state=futurelist[self.hours])
+    def updatelimitdynamic(self, entity, attribute, old, new, kwargs):
+        values=[]
+        values=self.get_state("sensor.pricetime", attribute="raw")
+        if self.get_state("sensor.pricetimetomorrow") == "on":
+            values.extend(self.get_state("sensor.pricetimetomorrow", attribute="raw"))
+        templist=[]
+        for i in values:
+            if (datetime.fromisoformat(i['start'])>self.get_now() and datetime.fromisoformat(i['start'])<self.get_now()+timedelta(hours=self.hourslimit)):
+                templist.append(i['value'])
+        self.set_state(self.limitid, state=sorted(templist)[self.hours])
+        if self.away:
+            if self.get_state(self.awayid)==self.awaystatus:
+                self.set_state(self.limitid, state=sorted(templist)[self.awayhours]) 
         if self.domain== "climate": 
             if self.boost:
-                self.set_state(self.limitidb, state=futurelist[self.hoursBoost])
+                self.set_state(self.limitidb, state=sorted(templist)[self.hoursBoost])
 
-    def updatelimitday(self, entity, attribute, old, new, kwargs):
-        future=self.get_state("sensor.spot_cost_today")
-        futurelist=future.replace('[','').replace(']','').split(", ")
-        if self.get_state(self.limitid) == float('inf'):
-            self.set_state(self.limitid, state=futurelist[self.hours])
-        if self.domain== "climate":
+    def updatelimit(self, kwargs):
+        values=[]
+        values=self.get_state("sensor.pricetime", attribute="raw")
+        if self.get_state("sensor.pricetimetomorrow") == "on":
+            values.extend(self.get_state("sensor.pricetimetomorrow", attribute="raw"))
+        templist=[]
+        for i in values:
+            if (datetime.fromisoformat(i['start'])>self.get_now() and datetime.fromisoformat(i['start'])<self.get_now()+timedelta(hours=self.hourslimit)):
+                templist.append(i['value'])
+        if not self.dynamicvalue:
+            self.set_state(self.limitid, state=sorted(templist)[self.hours])
+        elif self.get_state(self.dynamicentity)=="on":       
+            self.set_state(self.limitid, state=sorted(templist)[self.hours])
+        if self.away:
+            if self.get_state(self.awayid)==self.awaystatus:
+                self.set_state(self.limitid, state=sorted(templist)[self.awayhours]) 
+        if self.domain== "climate": 
             if self.boost:
-                if self.get_state(self.limitid) == float('inf'):
-                    self.set_state(self.limitidb, state=futurelist[self.hoursBoost])
+                self.set_state(self.limitidb, state=sorted(templist)[self.hoursBoost])
