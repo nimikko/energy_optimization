@@ -153,21 +153,7 @@ class Deviceoptimization2(hass.Hass):
                         self.call_service(self.service_over, entity_id = self.entity_id)
     
     def updatelimitdynamic(self, entity, attribute, old, new, kwargs):
-        values=[]
-        values=self.get_state("sensor.pricetime", attribute="raw")
-        if self.get_state("sensor.pricetimetomorrow") == "on":
-            values.extend(self.get_state("sensor.pricetimetomorrow", attribute="raw"))
-        templist=[]
-        for i in values:
-            if (datetime.fromisoformat(i['start'])>self.get_now() and datetime.fromisoformat(i['start'])<self.get_now()+timedelta(hours=self.hourslimit)):
-                templist.append(i['value'])
-        self.set_state(self.limitid, state=sorted(templist)[self.hours])
-        if self.away:
-            if self.get_state(self.awayid)==self.awaystatus:
-                self.set_state(self.limitid, state=sorted(templist)[self.awayhours]) 
-        if self.domain== "climate": 
-            if self.boost:
-                self.set_state(self.limitidb, state=sorted(templist)[self.hoursBoost])
+        self.run_in(self.updatelimit, 1)
 
     def updatelimit(self, kwargs):
         values=[]
