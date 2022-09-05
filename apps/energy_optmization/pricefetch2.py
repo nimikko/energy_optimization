@@ -42,9 +42,7 @@ class PriceFetch2(hass.Hass):
             self.set_state("sensor.pricetimetomorrow", state="on", attributes= {"raw": tommorrow})
         else:
             self.set_state("sensor.pricetimetomorrow", state="off")
-            self.log(datetime.datetime.today().hour)
             if datetime.datetime.today().hour>=13: 
-                self.log("It did not work")
                 self.run_in(self.getprices2, 600) # If there is no prices yet check again in 10 minutes
         
     def updatecurrentprice(self,kwargs): #Get current price once an hour and update it
@@ -59,9 +57,7 @@ class PriceFetch2(hass.Hass):
                 self.set_state("sensor.spot_sell_eur", state=i['sell']/100, attributes={"unit_of_measurement":"eur/kWh"})
     
     def _prepare_values2(self, dateend) -> list:
-        self.log (dateend)
         data=elspot.Prices().hourly(end_date=dateend,areas=[self.area])
-        self.log(data)
         priceslisttemp= []
         for item in data['areas'][self.area]['values']:
             if float(item["value"]) != float('inf'):
