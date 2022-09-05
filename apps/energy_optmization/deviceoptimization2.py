@@ -163,7 +163,7 @@ class Deviceoptimization2(hass.Hass):
         templist=[]
         for i in values:
             if (datetime.fromisoformat(i['start'])>self.get_now() and datetime.fromisoformat(i['start'])<self.get_now()+timedelta(hours=self.hourslimit)):
-                templist.append(i['value'])
+                templist.append(i['buy'])
         if not self.dynamicvalue:
             self.set_state(self.limitid, state=sorted(templist)[self.hours])
         elif self.get_state(self.dynamicentity)=="on":       
