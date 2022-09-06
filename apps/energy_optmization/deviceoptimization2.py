@@ -64,6 +64,12 @@ class Deviceoptimization2(hass.Hass):
             self.away=True
         except KeyError:
             self.away=False
+        try:
+            self.timelimitlower=self.args["timelimitlower"]
+            self.timelimitupper=self.args["timelimitupper"]+1
+        except KeyError:
+            self.timelimitlower=0
+            self.timelimitupper=24
         if self.domain== "climate":
             try:
                 self.hoursBoost=self.args["hoursBoost"]-1
@@ -141,7 +147,7 @@ class Deviceoptimization2(hass.Hass):
                     if self.timerActive:
                         self.call_service("timer/pause", entity_id= self.timer)     
             else:
-                if float(new)<=float(self.get_state(self.limitid)):
+               if (float(new)<=float(self.get_state(self.limitid)) and self.get_now().hour>=self.timelimitlower and self.get_now().hour<self.timelimitupper):
                     if self.selectvalueactive:
                         self.select_option(self.entity_id, self.selectvalueUnder)
                     else:
@@ -162,7 +168,7 @@ class Deviceoptimization2(hass.Hass):
             values.extend(self.get_state("sensor.pricetimetomorrow", attribute="raw"))
         templist=[]
         for i in values:
-            if (datetime.fromisoformat(i['start'])>self.get_now() and datetime.fromisoformat(i['start'])<self.get_now()+timedelta(hours=self.hourslimit)):
+            if (datetime.fromisoformat(i['start'])>self.get_now() and datetime.fromisoformat(i['start'])<self.get_now()+timedelta(hours=self.hourslimit) and datetime.fromisoformat(i['start']).hour>=self.timelimitlower and datetime.fromisoformat(i['start']).hour<self.timelimitupper):
                 templist.append(i['buy'])
         if not self.dynamicvalue:
             self.set_state(self.limitid, state=sorted(templist)[self.hours])
