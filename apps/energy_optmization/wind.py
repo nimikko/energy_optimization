@@ -8,7 +8,6 @@ import appdaemon.plugins.hass.hassapi as hass
 
 class Windpower(hass.Hass):
     def initialize(self):
-
         try:
             self.apikey=self.args["fingridapikey"]
         except KeyError:

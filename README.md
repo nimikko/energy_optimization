@@ -16,12 +16,16 @@ Pricefetch need to be running before the device optimization can run
 
 **Example app**
 
->EPrice:
->  module: pricefetch2
->  class: PriceFetch2
->  extracost: 6.69372
->  area: FI
-> priority: 1
+For fetching electric prices from Nordpool
+>EPrice:  
+  module: pricefetch2  
+  class: PriceFetch2  
+  extracost: 6.69372  
+  area: FI  
+  priority: 1
 
-
-
+For fetching windpower estimates from Fingrid
+>Windpower:  
+  module: wind  
+  class: Windpower  
+  apikey: !secret fingridapikey  
