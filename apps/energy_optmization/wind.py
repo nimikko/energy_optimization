@@ -1,4 +1,3 @@
-from logging.handlers import TimedRotatingFileHandler
 import requests
 import urllib.parse
 import datetime as dt
@@ -15,7 +14,6 @@ class Windpower(hass.Hass):
         self.run_in(self.fetchwindpower, 0)
         hourly_start=datetime.today().hour
         self.run_hourly(self.fetchwindpower, dt.time(hourly_start, 0, 1))
-   
    
     def fetchwindpower(self,kwargs):   
         Start=datetime.today()+timedelta(hours=-24)

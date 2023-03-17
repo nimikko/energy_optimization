@@ -3,7 +3,6 @@ import appdaemon.plugins.hass.hassapi as hass
 import datetime
 import pytz
 from nordpool import elspot
-
 class PriceFetch2(hass.Hass):
     def initialize(self):
         try:
@@ -19,32 +18,46 @@ class PriceFetch2(hass.Hass):
         except KeyError:
             self.sellmargin=0          
         if self.area =='FI':
-            self.vat=1.24
+            self.vat=1.10
             self.tz=pytz.timezone('Europe/Helsinki')
         self.run_in(self.getprices2, 0)
         self.run_in(self.updatecurrentprice, 0)
-        self.run_daily(self.getprices2, "13:47:02") #New prices are published to Nordpool around 13:45 EET
+        self.run_daily(self.getprices2, "13:49:02") #New prices are published to Nordpool around 13:45 EET
+        self.run_daily(self.getprices2, "23:55:02") #Update tommorrow to today after nordpool changes to next day
         self.run_daily(self.getprices2, "01:00:02") #Update tommorrow to today after nordpool changes to next day
         hourly_start=datetime.datetime.today().hour+1
         self.run_hourly(self.updatecurrentprice, datetime.time(hourly_start, 0, 1)) #Update prices every hour
 
     def getprices2 (self,kwargs):
+        self.set_state("sensor.nordpooldebug", state="Started today")
         today = []
-        today=self._prepare_values2(self.date())
+        try:
+            today=self._prepare_values2(self.date())
+        except:
+            self.set_state("sensor.nordpooldebug", state="Today fetch failed")
+            self.run_in(self.getprices2, 300)
         if today:
             self.set_state("sensor.pricetime", state="on", attributes= {"raw": today})
         else: 
             self.set_state("sensor.pricetime", state="off")
             self.run_in(self.getprices2, 300)
-        tommorrow =[]
-        tommorrow=self._prepare_values2(self.date()+datetime.timedelta(days=1))
-        if tommorrow:
-            self.set_state("sensor.pricetimetomorrow", state="on", attributes= {"raw": tommorrow})
-        else:
-            self.set_state("sensor.pricetimetomorrow", state="off")
-            if datetime.datetime.today().hour>=13: 
+        self.set_state("sensor.nordpooldebug", state="Started tomorrow")
+        if datetime.datetime.today().hour>=13: 
+            tommorrow =[]
+            try:
+                tommorrow=self._prepare_values2(self.date()+datetime.timedelta(days=1))
+            except:
+                self.set_state("sensor.nordpooldebug", state="Tommorrow fetch failed")
+                self.run_in(self.getprices2, 900) 
+            if tommorrow:
+                self.set_state("sensor.pricetimetomorrow", state="on", attributes= {"raw": tommorrow, "updated":datetime.datetime.today()})
+                self.set_state("sensor.nordpooldebug", state="Tomorrow success")
+            else:
+                self.set_state("sensor.pricetimetomorrow", state="off", attributes= {"updated": datetime.datetime.today()})
                 self.run_in(self.getprices2, 900) # If there is no prices yet check again in 15 minutes
-        
+                self.set_state("sensor.nordpooldebug", state="Tomorrow qued")
+        else:
+            self.set_state("sensor.pricetimetomorrow", state="off", attributes= {"updated": datetime.datetime.today()})
     def updatecurrentprice(self,kwargs): #Get current price once an hour and update it
         values=[]
         values=self.get_state("sensor.pricetime", attribute="raw")

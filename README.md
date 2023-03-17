@@ -28,4 +28,4 @@ For fetching windpower estimates from Fingrid
 >Windpower:  
   module: wind  
   class: Windpower  
-  apikey: !secret fingridapikey  
+  fingridapikey: !secret fingridapikey  

@@ -1,6 +1,8 @@
-import appdaemon.plugins.hass.hassapi as hass
 import datetime as dt
-from datetime import timedelta, datetime
+from datetime import datetime, timedelta
+
+import appdaemon.plugins.hass.hassapi as hass
+
 
 class Deviceoptimization2(hass.Hass):
     def initialize(self):
@@ -27,6 +29,12 @@ class Deviceoptimization2(hass.Hass):
         except KeyError:
             self.log("Amount of hours not defined")
         try:
+              self.expensivelimit=self.args["expensivelimit"]
+              self.expensivehours=self.args["expensivehours"]-1
+              self.expensivelimitactive= True
+        except KeyError:
+            self.expensivelimitactive=False
+        try:
             self.dynamicentity=self.args["dynamicentity"] 
             self.dynamicvalue=True
         except KeyError:
@@ -34,7 +42,7 @@ class Deviceoptimization2(hass.Hass):
         try:   
             self.limitruntime=self.args["limitruntime"]
         except KeyError:
-            self.limitruntime="23:59:50"
+            self.limitruntime="23:58:50"
         try:
             self.hourslimit=self.args["hourslimit"]
         except KeyError:
@@ -84,6 +92,7 @@ class Deviceoptimization2(hass.Hass):
         except KeyError:
             self.timelimitlower=0
             self.timelimitupper=24
+    
         if self.domain== "climate":
             try:
                 self.hoursBoost=self.args["hoursBoost"]-1
@@ -101,6 +110,11 @@ class Deviceoptimization2(hass.Hass):
                 self.boost_amount=self.args["boost_amount"]
             except KeyError:
                 self.boost_amount=1
+            try:
+                self.high_amount=self.args["high_amount"]
+                self.HightempActive=True
+            except KeyError:
+                self.HightempActive=False
             try:
                 self.temperature=self.args["temperature"]
             except KeyError:
@@ -135,19 +149,22 @@ class Deviceoptimization2(hass.Hass):
                     self.conditonActive=True
             if self.domain == "climate":
                 if self.get_state(self.entity_id) != "fan_only":
-                    if self.boost and self.entity_exists(self.limitidb):
+                    if self.boost and self.entity_exists(self.limitidb) and self.HightempActive:
                         if float(new)<=float(self.get_state(self.limitidb)):
                             self.call_service(self.service_boost, entity_id = self.entity_id, temperature=float(self.get_state(self.temperature))+self.boost_amount) 
+                        elif float(new)>float(self.get_state(self.limitid)):
+                            self.call_service(self.service_over, entity_id = self.entity_id, temperature=float(self.get_state(self.temperature))+self.high_amount)
                         else:
-                            self.call_service(self.service_boost, entity_id = self.entity_id, temperature=float(self.get_state(self.temperature)))                 
-                    if float(new)<=float(self.get_state(self.limitid)) and self.get_state(self.conditon) == "on": #Will break if condition is not set on Climate entity
-                        self.call_service(self.service_under, entity_id = self.entity_id)
+                            self.call_service(self.service_under, entity_id = self.entity_id, temperature=float(self.get_state(self.temperature)))           
+                    elif float(new)<=float(self.get_state(self.limitid)):
+                        self.call_service(self.service_under, entity_id = self.entity_id, temperature=float(self.get_state(self.temperature)))
                     else:
                         self.call_service(self.service_over, entity_id = self.entity_id)
             elif self.conditonActive:
                 if (float(new)<=float(self.get_state(self.limitid)) and self.get_state(self.conditon) == "on"):
                     if self.selectvalueactive:
                         self.select_option(self.entity_id, self.selectvalueUnder)
+                        self.log("Charge car")
                     else:
                         self.call_service(self.service_under, entity_id = self.entity_id)
                     if self.timerActive:
@@ -155,14 +172,17 @@ class Deviceoptimization2(hass.Hass):
                             self.call_service("timer/start", entity_id=self.timer)
                         elif self.get_state(self.timer) == "idle":
                             self.call_service("timer/start", entity_id=self.timer, duration=self.get_state(self.timerduration))
-                    elif self.hours<1:
-                        self.call_service("input_boolean/turn_off", entity_id = self.conditon)
+                    elif not self.dynamicbattery:
+                        if self.hours<1:
+                            self.call_service("input_boolean/turn_off", entity_id = self.conditon)
                 else:
                     if self.dynamicbattery:
-                        if self.get_state(self.targetlevel)== self.get_state(self.currenlevel):
+                        if self.get_state(self.targetlevel)<= self.get_state(self.currentlevel):
                             self.select_option(self.entity_id, self.selectvalueUnder)
+                            self.log("Battery full")
                         else:
                             self.select_option(self.entity_id, self.selectvalueOver)
+                            self.log("No charging, energy price over limit")
                     elif self.selectvalueactive:
                         self.select_option(self.entity_id, self.selectvalueOver)
                     else:
@@ -186,7 +206,17 @@ class Deviceoptimization2(hass.Hass):
 
     def updatelimit(self, kwargs):
         if self.dynamicbattery:
-            self.hourslimit= 24-int(self.get_now().hour)+datetime.strptime(self.get_state(self.readytime),'%H:%M:%S').hour
+            self.log(self.get_now().hour)
+            self.log(datetime.strptime(self.get_state(self.readytime),'%H:%M:%S').hour)
+            if self.get_now().hour>datetime.strptime(self.get_state(self.readytime),'%H:%M:%S').hour:
+
+                self.hourslimit= 24-int(self.get_now().hour)+datetime.strptime(self.get_state(self.readytime),'%H:%M:%S').hour-1
+                self.log(self.hourslimit)
+                self.log("Ilta")
+            else:
+                self.hourslimit=datetime.strptime(self.get_state(self.readytime),'%H:%M:%S').hour-self.get_now().hour-1
+                self.log(self.hourslimit)
+                self.log("Aamu")
         values=[]
         values=self.get_state("sensor.pricetime", attribute="raw")
         if self.get_state("sensor.pricetimetomorrow") == "on":
@@ -197,12 +227,24 @@ class Deviceoptimization2(hass.Hass):
                 templist.append(i['buy'])
         if not self.dynamicvalue and not self.dynamicbattery:
             self.set_state(self.limitid, state=sorted(templist)[self.hours])
+        if self.expensivelimitactive:
+            if sorted(templist)[self.hours]>self.expensivelimit:
+                self.set_state(self.limitid, state=sorted(templist)[self.expensivehours])
         elif self.dynamicbattery:
             targetlevel=int(self.get_state(self.targetlevel))
             currentlevel=int(self.get_state(self.currentlevel))
-            self.set_state(self.limitid, state=sorted(templist)[int((self.batterysize*((targetlevel-currentlevel)/100)/float(self.chargepower)))+1])
-        elif self.get_state(self.dynamicentity)=="on":       
-            self.set_state(self.limitid, state=sorted(templist)[self.hours])
+            try:
+                self.set_state(self.limitid, state=sorted(templist)[int((self.batterysize*((targetlevel-currentlevel)/100)/float(self.chargepower)))])
+            except:
+                self.set_state(self.limitid, state=sorted(templist)[-1])
+            self.log(sorted(templist))
+            self.log(self.get_state(self.limitid))
+            self.log(currentlevel)
+            self.log(targetlevel)
+            self.log(int((self.batterysize*((targetlevel-currentlevel)/100)/float(self.chargepower))))
+        elif self.dynamicvalue:
+            if self.get_state(self.dynamicentity)=="on":       
+                self.set_state(self.limitid, state=sorted(templist)[self.hours])
         if self.away:
             if self.get_state(self.awayid)==self.awaystatus:
                 self.set_state(self.limitid, state=sorted(templist)[self.awayhours]) 
