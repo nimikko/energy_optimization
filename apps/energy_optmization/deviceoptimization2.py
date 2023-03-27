@@ -236,7 +236,7 @@ class Deviceoptimization2(hass.Hass):
             try:
                 self.set_state(self.limitid, state=sorted(templist)[int((self.batterysize*((targetlevel-currentlevel)/100)/float(self.chargepower)))])
             except:
-                self.set_state(self.limitid, state=sorted(templist)[-1])
+                self.set_state(self.limitid, state=sorted(templist reverse=True)[0])
             self.log(sorted(templist))
             self.log(self.get_state(self.limitid))
             self.log(currentlevel)

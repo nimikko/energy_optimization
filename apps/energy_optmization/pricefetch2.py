@@ -60,6 +60,7 @@ class PriceFetch2(hass.Hass):
             self.set_state("sensor.pricetimetomorrow", state="off", attributes= {"updated": datetime.datetime.today()})
     def updatecurrentprice(self,kwargs): #Get current price once an hour and update it
         values=[]
+        templist=[]
         values=self.get_state("sensor.pricetime", attribute="raw")
         if self.get_state("sensor.pricetimetomorrow") == "on":
             values.extend(self.get_state("sensor.pricetimetomorrow", attribute="raw"))
@@ -69,7 +70,9 @@ class PriceFetch2(hass.Hass):
                 self.set_state("sensor.spot_cost_eur", state=i['buy']/100, attributes={"unit_of_measurement":"eur/kWh"})
                 self.set_state("sensor.spot_sell", state=i['sell'], attributes={"unit_of_measurement":"snt/kWh"})
                 self.set_state("sensor.spot_sell_eur", state=i['sell']/100, attributes={"unit_of_measurement":"eur/kWh"})
-    
+            if (datetime.datetime.fromisoformat(i['start'])>self.get_now()):
+                templist.append(i['buy'])
+        self.set_state("sensor.spot_cost_low", state=sorted(templist)[0])
     def _prepare_values2(self, dateend) -> list:
         data=elspot.Prices().hourly(end_date=dateend,areas=[self.area])
         priceslisttemp= []
